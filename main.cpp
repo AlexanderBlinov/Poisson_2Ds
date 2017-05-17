@@ -66,7 +66,7 @@ int main(int argc, char *argv[]) {
 
 
     // Vichislenie osnovnih parametrov oblasti reshenija
-    int rit = 400, tag = 1000;
+    int rit = 300, tag = 1000;
     double h1 = 0.01, h2 = 0.01, h3 = 0.01;
     double X = 1, Y = 1, Z = 1;
     double w = 1.7;
@@ -95,12 +95,14 @@ int main(int argc, char *argv[]) {
     MPI_Datatype uik_t;
     MPI_Type_vector(r2, r4, r3 * r4 * Q4, MPI_DOUBLE, &uik_t);
     MPI_Type_commit(&uik_t);
-    MPI_Type_create_resized(uik_t, 0, sizeof(double) * r4, &uik_t);
-    MPI_Type_commit(&uik_t);
 
     MPI_Datatype ujk_t;
     MPI_Type_vector(r3, r4, r4 * Q4, MPI_DOUBLE, &ujk_t);
     MPI_Type_commit(&ujk_t);
+
+    MPI_Datatype uik_t_full;
+    MPI_Type_vector(r2, r4 * Q4, r3 * Q4 * r4, MPI_DOUBLE, &uik_t_full);
+    MPI_Type_commit(&uik_t_full);
 
     MPI_Datatype preik_t;
     MPI_Type_vector(r2, r4, r4 * Q4, MPI_DOUBLE, &preik_t);
@@ -126,13 +128,13 @@ int main(int argc, char *argv[]) {
         for (int igl4 = 0; igl4 < Q4; ++igl4) {
             if (left != -1) {
 //                printf("%d (%d, %d) recvs left from %d\n", rank, i1, igl4, left);
-                MPI_Recv(preLeft, 1, prejk_t, left, i1 * tag + igl4, grid_comm, &status);
+                MPI_Recv(preLeft + igl4 * r4, 1, prejk_t, left, i1 * tag + igl4, grid_comm, &status);
 //                printf("%d (%d, %d) recved left from %d\n", rank, i1, igl4, left);
             }
 
             if (up != -1) {
 //                printf("%d (%d, %d) recvs up form %d\n", rank, i1, igl4, up);
-                MPI_Recv(preBack, 1, preik_t, up, i1 * tag + igl4, grid_comm, &status);
+                MPI_Recv(preBack + igl4 * r4, 1, preik_t, up, i1 * tag + igl4, grid_comm, &status);
 //                printf("%d (%d, %d) recved up from %d\n", rank, i1, igl4, up);
             }
 
@@ -160,7 +162,7 @@ int main(int argc, char *argv[]) {
                         if (j == 0) {
                             ujm = B0((i + 1) * h1, (k + 1) * h3);
                         } else if (i3 == 0) {
-                            ujm = preBack[i1 * r4 * Q4 + i4];
+                            ujm = preBack[i2 * r4 * Q4 + i4];
                         } else {
                             ujm = U[(i2 * r3 + i3 - 1) * r4 * Q4 + i4];
                         }
@@ -217,7 +219,7 @@ int main(int argc, char *argv[]) {
             }
             if (up != -1) {
 //                printf("%d (%d) sends up to %d\n", rank, i1, up);
-                MPI_Send(U, Q4, uik_t, up, i1 + 1, grid_comm);
+                MPI_Send(U, 1, uik_t_full, up, i1 + 1, grid_comm);
 //                printf("%d (%d) sent up to %d\n", rank, i1, up);
             }
         }
@@ -226,9 +228,37 @@ int main(int argc, char *argv[]) {
     double *R;
     if (rank == 0) {
         R = (double *)malloc(sizeof(double) * r2 * Q2 * r3 * Q3 * r4 * Q4);
-    }
 
-    MPI_Gather(U, r2 * r3 * r4 * Q4, MPI_DOUBLE, R, r2 * r3 * r4 * Q4, MPI_DOUBLE, 0, grid_comm);
+        MPI_Datatype r_t;
+        MPI_Type_vector(r2, r3 * r4 * Q4, r3 * Q3 * r4 * Q4, MPI_DOUBLE, &r_t);
+        MPI_Type_commit(&r_t);
+
+        int self[2];
+        MPI_Cart_coords(grid_comm, rank, 2, self);
+        for (int n = 0; n < dim[0]; ++n) {
+            for (int m = 0; m < dim[1]; ++m) {
+                if (n == self[0] && m == self[1]) {
+                    for (int i = 0; i < r2; ++i) {
+                        for (int j = 0; j < r3; ++j) {
+                            for (int k = 0; k < r4 * Q4; ++k) {
+                                R[(((r2 * n + i) * Q3 + m) * r3 + j) * r4 * Q4 + k]
+                                        = U[(i * r3 + j) * r4 * Q4 + k];
+                            }
+                        }
+                    }
+                    continue;
+                }
+
+                int sender;
+                int coords[2];
+                coords[0] = n; coords[1] = m;
+                MPI_Cart_rank(grid_comm, coords, &sender);
+                MPI_Recv(R + (n * r2 * Q3 + m) * r3 * r4 * Q4, 1, r_t, sender, 10005000, grid_comm, &status);
+            }
+        }
+    } else {
+        MPI_Send(U, r2 * r3 * r4 * Q4, MPI_DOUBLE, 0, 10005000, grid_comm);
+    }
 
     MPI_Barrier(MPI_COMM_WORLD);
     end = MPI_Wtime();
