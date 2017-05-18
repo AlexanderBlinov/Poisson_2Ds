@@ -239,12 +239,9 @@ int main(int argc, char *argv[]) {
             for (int m = 0; m < dim[1]; ++m) {
                 if (n == self[0] && m == self[1]) {
                     for (int i = 0; i < r2; ++i) {
-                        for (int j = 0; j < r3; ++j) {
-                            for (int k = 0; k < r4 * Q4; ++k) {
-                                R[(((r2 * n + i) * Q3 + m) * r3 + j) * r4 * Q4 + k]
-                                        = U[(i * r3 + j) * r4 * Q4 + k];
-                            }
-                        }
+                        memcpy(R + ((r2 * n + i) * Q3 + m) * r3 * r4 * Q4,
+                               U + i * r3 * r4 * Q4,
+                               r3 * r4 * Q4 * sizeof(double));
                     }
                     continue;
                 }
