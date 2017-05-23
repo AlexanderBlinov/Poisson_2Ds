@@ -125,25 +125,15 @@ int main(int argc, char *argv[]) {
 
 
     for (int i1 = 0; i1 < rit; ++i1) {
-        if (i1 > 0) {
-//            printf("%d (%d) recvs right from %d\n", rank, i1, right);
-            MPI_Recv(preRight, PQ2 * PQ3 * r3 * r4 * Q4, MPI_DOUBLE, right, i1, grid_comm, &status);
-//            printf("%d (%d) recved right from %d\n", rank, i1, right);
-
-//            printf("%d (%d) recvs down from %d\n", rank, i1, down);
-            MPI_Recv(preForth, PQ2 * PQ3 * r2 * r4 * Q4, MPI_DOUBLE, down, i1, grid_comm, &status);
-//            printf("%d (%d) recved down from %d\n", rank, i1, down);
-
-        }
         for (int igl2 = coord[0], iigl2 = 0; igl2 < Q2; igl2 += dim[0], ++iigl2) {
-            if (coord[0] == 0 && iigl2 > 0) {
+            if (coord[0] == 0 && iigl2 > 0 && rank != left) {
 //                printf("%d (%d, %d) recvs left from %d\n", rank, i1, iigl2, left);
                 MPI_Recv(preLeft + iigl2 * PQ3 * r3 * r4 * Q4, PQ3 * r3 * r4 * Q4, MPI_DOUBLE, left,
                          i1 * tag + iigl2, grid_comm, &status);
 //                printf("%d (%d, %d) recvs left from %d\n", rank, i1, iigl2, left);
             }
             for (int igl3 = coord[1], iigl3 = 0; igl3 < Q3; igl3 += dim[1], ++iigl3) {
-                if (coord[1] == 0 && iigl3 > 0) {
+                if (coord[1] == 0 && iigl3 > 0 && rank != up) {
 //                    printf("%d (%d, %d, %d) recvs up form %d\n", rank, i1, iigl2, iigl3, up);
                     MPI_Recv(preBack + (iigl2 * PQ3 + iigl3) * r2 * r4 * Q4, r2 * r4 * Q4, MPI_DOUBLE, up,
                              (i1 * tag + iigl2) * tag + iigl3, grid_comm, &status);
@@ -153,20 +143,19 @@ int main(int argc, char *argv[]) {
                 for (int igl4 = 0; igl4 < Q4; ++igl4) {
                     // RECV
 
-                    if (coord[0] > 0) {
+                    if (coord[0] > 0 && rank != left) {
 //                        printf("%d (%d, %d, %d, %d) recvs left from %d\n", rank, i1, iigl2, iigl3, igl4, left);
                         MPI_Recv(preLeft + ((iigl2 * PQ3 + iigl3) * r3 * Q4 + igl4) * r4, 1, prejk_t, left,
                                  ((i1 * tag + iigl2) * tag + iigl3) + igl4, grid_comm, &status);
 //                        printf("%d (%d, %d, %d, %d) recved left from %d\n", rank, i1, iigl2, iigl3, igl4, left);
                     }
 
-                    if (coord[1] > 0) {
+                    if (coord[1] > 0 && rank != up) {
 //                        printf("%d (%d, %d, %d, %d) recvs up form %d\n", rank, i1, iigl2, iigl3, igl4, up);
                         MPI_Recv(preBack + ((iigl2 * PQ3 + iigl3) * r2 * Q4 + igl4) * r4, 1, preik_t, up,
                                  ((i1 * tag + iigl2) * tag + iigl3) + igl4, grid_comm, &status);
 //                        printf("%d (%d, %d, %d, %d) recved up from %d\n", rank, i1, iigl2, iigl3, igl4, up);
                     }
-
 
                     for (int i2 = 0; i2 < min(r2, Nx - igl2 * r2); ++i2) {
                         for (int i3 = 0; i3 < min(r3, Ny - igl3 * r3); ++i3) {
@@ -176,7 +165,11 @@ int main(int argc, char *argv[]) {
                                 if (i == 0) {
                                     uim = A0((j + 1) * h2, (k + 1) * h3);
                                 } else if (i2 == 0) {
-                                    uim = preLeft[((iigl2 * PQ3 + iigl3) * r3 + i3) * r4 * Q4 + i4];
+                                    if (dim[0] == 1) {
+                                        uim = U[((((iigl2 - 1) * PQ3 + iigl3 + 1) * r2 - 1) * r3 + i3) * r4 * Q4 + i4];
+                                    } else {
+                                        uim = preLeft[((iigl2 * PQ3 + iigl3) * r3 + i3) * r4 * Q4 + i4];
+                                    }
                                 } else {
                                     uim = U[(((iigl2 * PQ3 + iigl3) * r2 + i2 - 1) * r3 + i3) * r4 * Q4 + i4];
                                 }
@@ -184,8 +177,12 @@ int main(int argc, char *argv[]) {
                                 if (i == Nx - 1) {
                                     uip = A1((j + 1) * h2, (k + 1) * h3, X);
                                 } else if (i2 == r2 - 1) {
-                                    int x = (coord[0] == dim[0] - 1) ? iigl2 + 1 : iigl2;
-                                    uip = preRight[((x * PQ3 + iigl3) * r3 + i3) * r4 * Q4 + i4];
+                                    if (dim[0] == 1) {
+                                        uip = U[(((iigl2 + 1) * PQ3 + iigl3) * r2 * r3 + i3) * r4 * Q4 + i4];
+                                    } else {
+                                        int x = (coord[0] == dim[0] - 1) ? iigl2 + 1 : iigl2;
+                                        uip = preRight[((x * PQ3 + iigl3) * r3 + i3) * r4 * Q4 + i4];
+                                    }
                                 } else {
                                     uip = U[(((iigl2 * PQ3 + iigl3) * r2 + i2 + 1) * r3 + i3) * r4 * Q4 + i4];
                                 }
@@ -193,7 +190,11 @@ int main(int argc, char *argv[]) {
                                 if (j == 0) {
                                     ujm = B0((i + 1) * h1, (k + 1) * h3);
                                 } else if (i3 == 0) {
-                                    ujm = preBack[((iigl2 * PQ3 + iigl3) * r2 + i2) * r4 * Q4 + i4];
+                                    if (dim[1] == 1) {
+                                        ujm = U[(((iigl2 * PQ3 + iigl3 - 1) * r2 + i2 + 1) * r3 - 1) * r4 * Q4 + i4];
+                                    } else {
+                                        ujm = preBack[((iigl2 * PQ3 + iigl3) * r2 + i2) * r4 * Q4 + i4];
+                                    }
                                 } else {
                                     ujm = U[(((iigl2 * PQ3 + iigl3) * r2 + i2) * r3 + i3 - 1) * r4 * Q4 + i4];
                                 }
@@ -201,8 +202,12 @@ int main(int argc, char *argv[]) {
                                 if (j == Ny - 1) {
                                     ujp = B1((i + 1) * h1, (k + 1) * h3, Y);
                                 } else if (i3 == r3 - 1) {
-                                    int x = (coord[1] == dim[1] - 1) ? iigl3 + 1 : iigl3;
-                                    ujp = preForth[((iigl2 * PQ3 + x) * r2 + i2) * r4 * Q4 + i4];
+                                    if (dim[1] == 1) {
+                                        ujp = U[((iigl2 * PQ3 + iigl3 + 1) * r2 + i2) * r3 * r4 * Q4 + i4];
+                                    } else {
+                                        int x = (coord[1] == dim[1] - 1) ? iigl3 + 1 : iigl3;
+                                        ujp = preForth[((iigl2 * PQ3 + x) * r2 + i2) * r4 * Q4 + i4];
+                                    }
                                 } else {
                                     ujp = U[(((iigl2 * PQ3 + iigl3) * r2 + i2) * r3 + i3 + 1) * r4 * Q4 + i4];
                                 }
@@ -234,14 +239,14 @@ int main(int argc, char *argv[]) {
                     }
 
                     // Send
-                    if (coord[0] < dim[0] - 1) {
+                    if (coord[0] < dim[0] - 1 && rank != right) {
 //                        printf("%d (%d, %d, %d, %d) sends right to %d\n", rank, i1, iigl2, iigl3, igl4, right);
                         MPI_Send(U + (((iigl2 * PQ3 + iigl3 + 1) * r2 - 1) * r3 * Q4 + igl4) * r4, 1, ujk_t, right,
                                  ((i1 * tag + iigl2) * tag + iigl3) + igl4, grid_comm);
 //                        printf("%d (%d, %d, %d, %d) sent right to %d\n", rank, i1, iigl2, iigl3, igl4, right);
                     }
 
-                    if (coord[1] < dim[1] - 1) {
+                    if (coord[1] < dim[1] - 1 && rank != down) {
 //                        printf("%d (%d, %d, %d, %d) sends down to %d\n", rank, i1, iigl2, iigl3, igl4, down);
                         MPI_Send(U + ((((iigl2 * PQ3 + iigl3) * r2 + 1) * r3 - 1) * Q4 + igl4) * r4, 1, uik_t, down,
                                  ((i1 * tag + iigl2) * tag + iigl3) + igl4, grid_comm);
@@ -249,14 +254,14 @@ int main(int argc, char *argv[]) {
                     }
                 }
 
-                if (coord[1] == dim[1] - 1 && iigl3 < PQ3 - 1) {
+                if (coord[1] == dim[1] - 1 && iigl3 < PQ3 - 1 && rank != down) {
 //                    printf("%d (%d, %d, %d) sends down to %d\n", rank, i1, iigl2, iigl3, down);
                     MPI_Send(U + (((iigl2 * PQ3 + iigl3) * r2 + 1) * r3 - 1) * r4 * Q4, 1, uikq_t, down,
                              (i1 * tag + iigl2) * tag + iigl3 + 1, grid_comm);
 //                    printf("%d (%d, %d, %d) sent down to %d\n", rank, i1, iigl2, iigl3, down);
                 }
             }
-            if (coord[0] == dim[0] - 1 && iigl2 < PQ2 - 1) {
+            if (coord[0] == dim[0] - 1 && iigl2 < PQ2 - 1 && rank != right) {
 //                printf("%d (%d, %d) sends right to %d\n", rank, i1, iigl2, right);
                 MPI_Send(U + ((iigl2 * PQ3 + 1) * r2 - 1) * r3 * r4 * Q4, 1, ujk_t_full, right,
                          i1 * tag + iigl2 + 1, grid_comm);
@@ -264,13 +269,39 @@ int main(int argc, char *argv[]) {
             }
         }
         if (i1 < rit - 1) {
-//            printf("%d (%d) sends left to %d\n", rank, i1, left);
-            MPI_Send(U, PQ2, ujk_t_full, left, i1 + 1, grid_comm);
-//            printf("%d (%d) sent left to %d\n", rank, i1, left);
+            if (rank != left) {
+                if (coord[0] > 0) {
+//                    printf("%d (%d) sends left to %d\n", rank, i1, left);
+                    MPI_Send(U, PQ2, ujk_t_full, left, i1 + 1, grid_comm);
+//                    printf("%d (%d) sent left to %d\n", rank, i1, left);
+                }
+                if (coord[0] < dim[0] - 1) {
+                    MPI_Recv(preRight, PQ2 * PQ3 * r3 * r4 * Q4, MPI_DOUBLE, right, i1 + 1, grid_comm, &status);
+                }
+                if (coord[0] == 0) {
+                    MPI_Send(U, PQ2, ujk_t_full, left, i1 + 1, grid_comm);
+                }
+                if (coord[0] == dim[0] - 1) {
+                    MPI_Recv(preRight, PQ2 * PQ3 * r3 * r4 * Q4, MPI_DOUBLE, right, i1 + 1, grid_comm, &status);
+                }
+            }
 
-//            printf("%d (%d) sends up to %d\n", rank, i1, up);
-            MPI_Send(U, PQ2 * PQ3, uik_t_full, up, i1 + 1, grid_comm);
-//            printf("%d (%d) sent up to %d\n", rank, i1, up);
+            if (rank != up) {
+                if (coord[1] > 0) {
+//                    printf("%d (%d) sends up to %d\n", rank, i1, up);
+                    MPI_Send(U, PQ2 * PQ3, uik_t_full, up, i1 + 1, grid_comm);
+//                    printf("%d (%d) sent up to %d\n", rank, i1, up);
+                }
+                if (coord[1] < dim[1] - 1) {
+                    MPI_Recv(preForth, PQ2 * PQ3 * r2 * r4 * Q4, MPI_DOUBLE, down, i1 + 1, grid_comm, &status);
+                }
+                if (coord[1] == 0) {
+                    MPI_Send(U, PQ2 * PQ3, uik_t_full, up, i1 + 1, grid_comm);
+                }
+                if (coord[1] == dim[1] - 1) {
+                    MPI_Recv(preForth, PQ2 * PQ3 * r2 * r4 * Q4, MPI_DOUBLE, down, i1 + 1, grid_comm, &status);
+                }
+            }
 
         }
     }
