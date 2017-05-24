@@ -69,7 +69,7 @@ int main(int argc, char *argv[]) {
 
     // Vichislenie osnovnih parametrov oblasti reshenija
     int rit = 300, tag = 31;
-    double h1 = 0.01, h2 = 0.01, h3 = 0.01;
+    double h1 = 0.005, h2 = 0.005, h3 = 0.005;
     double X = 1, Y = 1, Z = 1;
     double w = 1.7;
 
@@ -90,6 +90,7 @@ int main(int argc, char *argv[]) {
     double *preRight = (double *)calloc((size_t)PQ2 * PQ3 * r3 * r4 * Q4, sizeof(double));
 
     MPI_Status status;
+    MPI_Request request;
 
     MPI_Datatype uik_t;
     MPI_Type_vector(r2, r4, r3 * r4 * Q4, MPI_DOUBLE, &uik_t);
@@ -125,32 +126,27 @@ int main(int argc, char *argv[]) {
 
 
     for (int i1 = 0; i1 < rit; ++i1) {
-        for (int igl2 = coord[0], iigl2 = 0; igl2 < Q2; igl2 += dim[0], ++iigl2) {
-            if (coord[0] == 0 && iigl2 > 0 && rank != left) {
-//                printf("%d (%d, %d) recvs left from %d\n", rank, i1, iigl2, left);
-                MPI_Recv(preLeft + iigl2 * PQ3 * r3 * r4 * Q4, PQ3 * r3 * r4 * Q4, MPI_DOUBLE, left,
-                         i1 * tag + iigl2, grid_comm, &status);
-//                printf("%d (%d, %d) recvs left from %d\n", rank, i1, iigl2, left);
+        if (i1 > 0) {
+            if (rank != right) {
+                MPI_Recv(preRight, PQ2 * PQ3 * r3 * r4 * Q4, MPI_DOUBLE, right, i1, grid_comm, &status);
             }
+            if (rank != down) {
+                MPI_Recv(preForth, PQ2 * PQ3 * r2 * r4 * Q4, MPI_DOUBLE, down, i1, grid_comm, &status);
+            }
+        }
+        for (int igl2 = coord[0], iigl2 = 0; igl2 < Q2; igl2 += dim[0], ++iigl2) {
             for (int igl3 = coord[1], iigl3 = 0; igl3 < Q3; igl3 += dim[1], ++iigl3) {
-                if (coord[1] == 0 && iigl3 > 0 && rank != up) {
-//                    printf("%d (%d, %d, %d) recvs up form %d\n", rank, i1, iigl2, iigl3, up);
-                    MPI_Recv(preBack + (iigl2 * PQ3 + iigl3) * r2 * r4 * Q4, r2 * r4 * Q4, MPI_DOUBLE, up,
-                             (i1 * tag + iigl2) * tag + iigl3, grid_comm, &status);
-//                    printf("%d (%d, %d, %d) recved up from %d\n", rank, i1, igl2, iigl3, left);
-                }
-
                 for (int igl4 = 0; igl4 < Q4; ++igl4) {
                     // RECV
 
-                    if (coord[0] > 0 && rank != left) {
+                    if (((coord[0] == 0 && iigl2 > 0) || coord[0] > 0) && rank != left) {
 //                        printf("%d (%d, %d, %d, %d) recvs left from %d\n", rank, i1, iigl2, iigl3, igl4, left);
                         MPI_Recv(preLeft + ((iigl2 * PQ3 + iigl3) * r3 * Q4 + igl4) * r4, 1, prejk_t, left,
                                  ((i1 * tag + iigl2) * tag + iigl3) + igl4, grid_comm, &status);
 //                        printf("%d (%d, %d, %d, %d) recved left from %d\n", rank, i1, iigl2, iigl3, igl4, left);
                     }
 
-                    if (coord[1] > 0 && rank != up) {
+                    if (((coord[1] == 0 && iigl3 > 0) || coord[1] > 0) && rank != up) {
 //                        printf("%d (%d, %d, %d, %d) recvs up form %d\n", rank, i1, iigl2, iigl3, igl4, up);
                         MPI_Recv(preBack + ((iigl2 * PQ3 + iigl3) * r2 * Q4 + igl4) * r4, 1, preik_t, up,
                                  ((i1 * tag + iigl2) * tag + iigl3) + igl4, grid_comm, &status);
@@ -239,68 +235,43 @@ int main(int argc, char *argv[]) {
                     }
 
                     // Send
-                    if (coord[0] < dim[0] - 1 && rank != right) {
+                    if (((coord[0] == dim[0] - 1 && iigl2 < PQ2 - 1) || coord[0] < dim[0] - 1)
+                        && rank != right && iigl2 * dim[0] + coord[0] + 1 < Q2) {
+                        int sendTag = ((i1 * tag + iigl2) * tag + iigl3) + igl4;
+                        if (coord[0] == dim[0] - 1) {
+                            sendTag = ((i1 * tag + iigl2 + 1) * tag + iigl3) + igl4;
+                        }
 //                        printf("%d (%d, %d, %d, %d) sends right to %d\n", rank, i1, iigl2, iigl3, igl4, right);
-                        MPI_Send(U + (((iigl2 * PQ3 + iigl3 + 1) * r2 - 1) * r3 * Q4 + igl4) * r4, 1, ujk_t, right,
-                                 ((i1 * tag + iigl2) * tag + iigl3) + igl4, grid_comm);
+                        MPI_Isend(U + (((iigl2 * PQ3 + iigl3 + 1) * r2 - 1) * r3 * Q4 + igl4) * r4, 1, ujk_t, right,
+                                  sendTag, grid_comm, &request);
 //                        printf("%d (%d, %d, %d, %d) sent right to %d\n", rank, i1, iigl2, iigl3, igl4, right);
+
                     }
 
-                    if (coord[1] < dim[1] - 1 && rank != down) {
+                    if (((coord[1] == dim[1] - 1 && iigl3 < PQ3 - 1) || coord[1] < dim[1] - 1)
+                        && rank != down && iigl3 * dim[1] + coord[1] + 1 < Q3) {
+                        int sendTag = ((i1 * tag + iigl2) * tag + iigl3) + igl4;
+                        if (coord[1] == dim[1] - 1) {
+
+                            sendTag = ((i1 * tag + iigl2) * tag + iigl3 + 1) + igl4;
+
+                        }
 //                        printf("%d (%d, %d, %d, %d) sends down to %d\n", rank, i1, iigl2, iigl3, igl4, down);
-                        MPI_Send(U + ((((iigl2 * PQ3 + iigl3) * r2 + 1) * r3 - 1) * Q4 + igl4) * r4, 1, uik_t, down,
-                                 ((i1 * tag + iigl2) * tag + iigl3) + igl4, grid_comm);
+                        MPI_Isend(U + ((((iigl2 * PQ3 + iigl3) * r2 + 1) * r3 - 1) * Q4 + igl4) * r4, 1, uik_t, down,
+                                  sendTag, grid_comm, &request);
 //                        printf("%d (%d, %d, %d, %d) sent down to %d\n", rank, i1, iigl2, iigl3, igl4, down);
+
                     }
                 }
-
-                if (coord[1] == dim[1] - 1 && iigl3 < PQ3 - 1 && rank != down) {
-//                    printf("%d (%d, %d, %d) sends down to %d\n", rank, i1, iigl2, iigl3, down);
-                    MPI_Send(U + (((iigl2 * PQ3 + iigl3) * r2 + 1) * r3 - 1) * r4 * Q4, 1, uikq_t, down,
-                             (i1 * tag + iigl2) * tag + iigl3 + 1, grid_comm);
-//                    printf("%d (%d, %d, %d) sent down to %d\n", rank, i1, iigl2, iigl3, down);
-                }
-            }
-            if (coord[0] == dim[0] - 1 && iigl2 < PQ2 - 1 && rank != right) {
-//                printf("%d (%d, %d) sends right to %d\n", rank, i1, iigl2, right);
-                MPI_Send(U + ((iigl2 * PQ3 + 1) * r2 - 1) * r3 * r4 * Q4, 1, ujk_t_full, right,
-                         i1 * tag + iigl2 + 1, grid_comm);
-//                printf("%d (%d, %d) sent right to %d\n", rank, i1, iigl2, right);
             }
         }
         if (i1 < rit - 1) {
             if (rank != left) {
-                if (coord[0] > 0) {
-//                    printf("%d (%d) sends left to %d\n", rank, i1, left);
-                    MPI_Send(U, PQ2, ujk_t_full, left, i1 + 1, grid_comm);
-//                    printf("%d (%d) sent left to %d\n", rank, i1, left);
-                }
-                if (coord[0] < dim[0] - 1) {
-                    MPI_Recv(preRight, PQ2 * PQ3 * r3 * r4 * Q4, MPI_DOUBLE, right, i1 + 1, grid_comm, &status);
-                }
-                if (coord[0] == 0) {
-                    MPI_Send(U, PQ2, ujk_t_full, left, i1 + 1, grid_comm);
-                }
-                if (coord[0] == dim[0] - 1) {
-                    MPI_Recv(preRight, PQ2 * PQ3 * r3 * r4 * Q4, MPI_DOUBLE, right, i1 + 1, grid_comm, &status);
-                }
+                MPI_Isend(U, PQ2, ujk_t_full, left, i1 + 1, grid_comm, &request);
             }
 
             if (rank != up) {
-                if (coord[1] > 0) {
-//                    printf("%d (%d) sends up to %d\n", rank, i1, up);
-                    MPI_Send(U, PQ2 * PQ3, uik_t_full, up, i1 + 1, grid_comm);
-//                    printf("%d (%d) sent up to %d\n", rank, i1, up);
-                }
-                if (coord[1] < dim[1] - 1) {
-                    MPI_Recv(preForth, PQ2 * PQ3 * r2 * r4 * Q4, MPI_DOUBLE, down, i1 + 1, grid_comm, &status);
-                }
-                if (coord[1] == 0) {
-                    MPI_Send(U, PQ2 * PQ3, uik_t_full, up, i1 + 1, grid_comm);
-                }
-                if (coord[1] == dim[1] - 1) {
-                    MPI_Recv(preForth, PQ2 * PQ3 * r2 * r4 * Q4, MPI_DOUBLE, down, i1 + 1, grid_comm, &status);
-                }
+                MPI_Isend(U, PQ2 * PQ3, uik_t_full, up, i1 + 1, grid_comm, &request);
             }
 
         }
