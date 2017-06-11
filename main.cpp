@@ -2,41 +2,34 @@
 #include <stdlib.h>
 #include <math.h>
 #include <algorithm>
+#include <string.h>
 
 using namespace std;
 
-
-// Neodnorodnost'
 double F(double x, double y, double z) {
     return 3 * exp(x + y + z);
 }
 
-// Granichnoe uslovie pri x=0
 double A0(double y, double z) {
     return exp(y + z);
 }
 
-// Granichnoe uslovie pri x=X
 double A1(double y, double z, double X) {
     return exp(X + y + z);
 }
 
-// Granichnoe uslovie pri y=0
 double B0(double x, double z) {
     return exp(x + z);
 }
 
-// Granichnoe uslovie pri y=Y
 double B1(double x, double z, double Y) {
     return exp(x + Y + z);
 }
 
-// Granichnoe uslovie pri z=0
 double C0(double x, double y) {
     return exp(x + y);
 }
 
-// Granichnoe uslovie pri z=Z
 double C1(double x, double y, double Z) {
     return exp(x + y + Z);
 }
@@ -60,22 +53,19 @@ int main(int argc, char *argv[]) {
     reorder = true;
     MPI_Cart_create(MPI_COMM_WORLD, 2, dim, period, reorder, &grid_comm);
 
-    // Nahozhedie sosednih processov
     MPI_Cart_shift(grid_comm, 0, 1, &left, &right);
     MPI_Cart_shift(grid_comm, 1, 1, &up, &down);
 
     MPI_Cart_coords(grid_comm, rank, 2, coord);
 
-
-    // Vichislenie osnovnih parametrov oblasti reshenija
-    int rit = 300, tag = 31;
+    int rit = 200, tag = 31;
     double h1 = 0.005, h2 = 0.005, h3 = 0.005;
     double X = 1, Y = 1, Z = 1;
     double w = 1.7;
 
     int Nx = (int)(X / h1) - 1, Ny = (int)(Y / h2) - 1, Nz = (int)(Z / h3) - 1;
 
-    int r2 = 10, r3 = 10, r4 = 10;
+    int r2 = 20, r3 = 20, r4 = 3;
     int Q2 = (int)ceil((double)Nx / r2);
     int Q3 = (int)ceil((double)Ny / r3);
     int Q4 = (int)ceil((double)Nz / r4);
@@ -140,17 +130,13 @@ int main(int argc, char *argv[]) {
                     // RECV
 
                     if (((coord[0] == 0 && iigl2 > 0) || coord[0] > 0) && rank != left) {
-//                        printf("%d (%d, %d, %d, %d) recvs left from %d\n", rank, i1, iigl2, iigl3, igl4, left);
                         MPI_Recv(preLeft + ((iigl2 * PQ3 + iigl3) * r3 * Q4 + igl4) * r4, 1, prejk_t, left,
                                  ((i1 * tag + iigl2) * tag + iigl3) + igl4, grid_comm, &status);
-//                        printf("%d (%d, %d, %d, %d) recved left from %d\n", rank, i1, iigl2, iigl3, igl4, left);
                     }
 
                     if (((coord[1] == 0 && iigl3 > 0) || coord[1] > 0) && rank != up) {
-//                        printf("%d (%d, %d, %d, %d) recvs up form %d\n", rank, i1, iigl2, iigl3, igl4, up);
                         MPI_Recv(preBack + ((iigl2 * PQ3 + iigl3) * r2 * Q4 + igl4) * r4, 1, preik_t, up,
                                  ((i1 * tag + iigl2) * tag + iigl3) + igl4, grid_comm, &status);
-//                        printf("%d (%d, %d, %d, %d) recved up from %d\n", rank, i1, iigl2, iigl3, igl4, up);
                     }
 
                     for (int i2 = 0; i2 < min(r2, Nx - igl2 * r2); ++i2) {
@@ -241,10 +227,8 @@ int main(int argc, char *argv[]) {
                         if (coord[0] == dim[0] - 1) {
                             sendTag = ((i1 * tag + iigl2 + 1) * tag + iigl3) + igl4;
                         }
-//                        printf("%d (%d, %d, %d, %d) sends right to %d\n", rank, i1, iigl2, iigl3, igl4, right);
                         MPI_Isend(U + (((iigl2 * PQ3 + iigl3 + 1) * r2 - 1) * r3 * Q4 + igl4) * r4, 1, ujk_t, right,
                                   sendTag, grid_comm, &request);
-//                        printf("%d (%d, %d, %d, %d) sent right to %d\n", rank, i1, iigl2, iigl3, igl4, right);
 
                     }
 
@@ -256,10 +240,8 @@ int main(int argc, char *argv[]) {
                             sendTag = ((i1 * tag + iigl2) * tag + iigl3 + 1) + igl4;
 
                         }
-//                        printf("%d (%d, %d, %d, %d) sends down to %d\n", rank, i1, iigl2, iigl3, igl4, down);
                         MPI_Isend(U + ((((iigl2 * PQ3 + iigl3) * r2 + 1) * r3 - 1) * Q4 + igl4) * r4, 1, uik_t, down,
                                   sendTag, grid_comm, &request);
-//                        printf("%d (%d, %d, %d, %d) sent down to %d\n", rank, i1, iigl2, iigl3, igl4, down);
 
                     }
                 }
